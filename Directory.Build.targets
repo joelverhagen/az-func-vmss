@@ -8,7 +8,7 @@
       Directories="$(DeploymentDir)"/>
     <ZipDirectory
       SourceDirectory="$(PublishDir)"
-      DestinationFile="$(DeploymentDir)\$(MSBuildProjectName).zip"
+      DestinationFile="$(DeploymentDir)\$(MSBuildProjectName)-$(RuntimeIdentifier).zip"
       Overwrite="true" />
   </Target>
 </Project>

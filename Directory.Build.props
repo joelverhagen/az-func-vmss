@@ -1,5 +1,5 @@
 <Project>
   <PropertyGroup>
-    <DeploymentDir Condition="'$(DeploymentDir)' == ''">$(MSBuildThisFileDirectory)deploy</DeploymentDir>
+    <DeploymentDir Condition="'$(DeploymentDir)' == ''">$(MSBuildThisFileDirectory)artifacts</DeploymentDir>
   </PropertyGroup>
 </Project>

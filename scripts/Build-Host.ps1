@@ -1,10 +1,7 @@
 [CmdletBinding()]
 param (
   [Parameter(Mandatory = $true)]
-  [string]$RuntimeIdentifier,
-  
-  [Parameter(Mandatory = $false)]
-  [string]$OutputPath
+  [string]$RuntimeIdentifier
 )
 
 $hostVersion = "4.3.0"
@@ -14,7 +11,12 @@ $hostSrcUrl = "https://github.com/Azure/azure-functions-host/archive/v$hostVersi
 $hostSrcZip = Join-Path $artifactsDir "azure-functions-host-$hostVersion.zip"
 $hostSrcDir = Join-Path $artifactsDir "azure-functions-host-$hostVersion"
 $hostBinDir = Join-Path $artifactsDir "host"
-$hostBinZip = if ($OutputPath) { $OutputPath } else { Join-Path $artifactsDir "AzureFunctionsHost.zip" }
+$hostBinZip = Join-Path $PSScriptRoot "../artifacts/azure-functions-host-$hostVersion-$RuntimeIdentifier.zip"
+
+if (Test-Path $hostBinZip) {
+  Write-Host "The host is already built: $hostBinZip"
+  exit
+}
 
 function Remove-DirSafe ($dir) {
   if (Test-Path $dir) {
