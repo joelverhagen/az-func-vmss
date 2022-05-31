@@ -134,10 +134,6 @@ foreach ($pair in $hostEnv.GetEnumerator()) {
 
 $scriptContent = "Write-Host 'Setting environment variables'$([Environment]::NewLine)"
 foreach ($pair in $scriptEnv.GetEnumerator() | Sort-Object -Property Key) {
-    if ($pair.Value -eq "PLACEHOLDER") {
-        throw "The environment variable '$($pair.Key)' still has the PLACEHOLDER value."
-    }
-
     $scriptContent += "`${Env:$($pair.Key)} = '$($pair.Value.Replace("'", "''"))'$([Environment]::NewLine)"
 }
 Write-Host ""
