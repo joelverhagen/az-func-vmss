@@ -107,10 +107,14 @@ if (!(Test-Path $workersDir)) { New-Item $workersDir -ItemType Directory | Out-N
 Write-Host ""
 
 # Find the environment variables file and load it, start building the app script
+# This is supposed to work like Docker env files but may not.
 $envPath = Get-Pattern $EnvPattern
 Write-Host "Found env path: $envPath"
 $scriptEnv = [ordered]@{}
 foreach ($line in Get-Content $envPath) {
+    if (!$line -or !$line.Trim() -or $line.Trim().StartsWith('#')) {
+        continue
+    }
     $splits = $line.Split("=", 2)
     Write-Host "Setting file env: $($splits[0])"
     $scriptEnv[$splits[0]] = $splits[1]

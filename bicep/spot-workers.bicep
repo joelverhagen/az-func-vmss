@@ -1,19 +1,41 @@
+@description('The region to provision resources in. Defaults to the resource group location.')
 param location string = resourceGroup().location
+
+@description('The storage account to upload deployment files to and use for the Azure Functions host.')
 param storageAccountName string
-param userManagedIdentityName string = 'az-func-vmss'
-param appZipPattern string = '*app*.zip'
+
+@description('The release name to use for the deployment scripts and the Azure Functions Host zip file. Found on https://github.com/joelverhagen/az-func-vmss/releases')
+param gitHubReleaseName string
+
+@description('A publicly accessibly URL (can be blob storage SAS) for the Azure Functions app zip file. Made with zipping the output of dotnet publish.')
 @secure()
 param appZipUrl string
+
+@description('A publicly accessibly URL (can be blob storage SAS) for the app settings. Works like Docker environment files (.env).')
 @secure()
 param appEnvUrl string
+
+@description('The name of the user managed identity to assign to the VMSS.')
+param userManagedIdentityName string = 'az-func-vmss'
+
+@description('The file name pattern used to find the appZipUrl file after downloading it. Defaults to the file name in URL.')
+param appZipPattern string = split(split(appZipUrl, '?')[0], '/')[-1]
+
+@description('The deployment label to use as a directory name in the deployment blob storage container and on the VMSS disk.')
 param deploymentLabel string = newGuid()
+
+@description('The container name to use for holding deployment files (host, app, env, install script) for VMSS custom script extension files.')
 param deploymentContainerName string = 'deployment'
 
+@description('The admin username for the VMSS instances.')
 param adminUsername string = 'az-func-vmss'
+
+@description('The admin password for the VMSS instances.')
 @secure()
 param adminPassword string
+
+@description('The specs for the VMSS resources. An array of objects. Each object must have: namePrefix (string, prefix for VMSS resource names), location (string, location for the VMSS resources), sku (string, VMSS SKU), maxInstances (int, max instances for auto-scaling).')
 param specs array = [
-  // An array of objects with these properties: "namePrefix", "location", "sku", "maxInstances"
   {
     namePrefix: 'az-func-vmss-0-'
     location: location
@@ -86,10 +108,10 @@ resource uploadBlobs 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
   properties: {
     azPowerShellVersion: '7.5'
     arguments: '-ManagedIdentityClientId \'${userManagedIdentity.properties.clientId}\' -DeploymentLabel \'${deploymentLabel}\' -StorageAccountName \'${storageAccountName}\' -DeploymentContainerName \'${deploymentContainerName}\''
-    primaryScriptUri: 'https://github.com/joelverhagen/az-func-vmss/releases/download/azure-functions-host-4.3.0/Set-DeploymentFiles.ps1'
+    primaryScriptUri: 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/Set-DeploymentFiles.ps1'
     supportingScriptUris: [
-      'https://github.com/joelverhagen/az-func-vmss/releases/download/azure-functions-host-4.3.0/azure-functions-host-4.3.0-win-x64.zip'
-      'https://github.com/joelverhagen/az-func-vmss/releases/download/azure-functions-host-4.3.0/Install-Standalone.ps1'
+      'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/azure-functions-host-4.3.0-win-x64.zip'
+      'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/Install-Standalone.ps1'
       appZipUrl
       appEnvUrl
     ]
