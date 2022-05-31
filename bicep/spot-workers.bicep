@@ -153,3 +153,4 @@ module workers './spot-worker.bicep' = [for (spec, index) in specs: {
 }]
 
 output fqdns array = [for (spec, index) in specs: workers[index].outputs.fqdn]
+
