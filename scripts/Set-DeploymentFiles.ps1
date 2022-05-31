@@ -10,7 +10,7 @@ param (
     [string]$StorageAccountName,
     
     [Parameter(Mandatory = $true)]
-    [string]$SpotWorkerDeploymentContainerName
+    [string]$DeploymentContainerName
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +38,7 @@ foreach ($fileName in $deploymentFiles) {
         try {
             $blob = Set-AzStorageBlobContent `
                 -Context $storageContext `
-                -Container $SpotWorkerDeploymentContainerName `
+                -Container $DeploymentContainerName `
                 -File "./$fileName" `
                 -Blob $blobName `
                 -Confirm:$false `

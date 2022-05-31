@@ -2,6 +2,7 @@ param userManagedIdentityName string
 
 param deploymentLabel string
 param customScriptExtensionFiles array
+param appZipPattern string
 
 param location string
 param vmssSku string
@@ -13,6 +14,7 @@ param vmssName string
 param nicName string
 param ipConfigName string
 param autoscaleName string
+param loadBalancerName string
 param adminUsername string
 @secure()
 param adminPassword string
@@ -21,7 +23,37 @@ resource nsg 'Microsoft.Network/networkSecurityGroups@2021-03-01' = {
   name: nsgName
   location: location
   properties: {
-    securityRules: []
+    securityRules: [
+      {
+        name: 'HTTP'
+        properties: {
+          priority: 100
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '80'
+        }
+      }
+      // Enable RDP in the firewall for debugging purposes.
+      /*
+      {
+        name: 'AllowCorpNetPublicRdp'
+        properties: {
+          priority: 101
+          protocol: 'Tcp'
+          access: 'Allow'
+          direction: 'Inbound'
+          sourceAddressPrefix: '*'
+          sourcePortRange: '*'
+          destinationAddressPrefix: '*'
+          destinationPortRange: '3389'
+        }
+      }
+      */
+    ]
   }
 }
 
@@ -50,6 +82,79 @@ resource vnet 'Microsoft.Network/virtualNetworks@2021-03-01' = {
 
 resource userManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' existing = {
   name: userManagedIdentityName
+}
+
+resource loadBalancerIp 'Microsoft.Network/publicIPAddresses@2021-03-01' = {
+  name: '${loadBalancerName}-ip'
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+    dnsSettings: {
+      domainNameLabel: vmssName
+    }
+  }
+}
+
+var feIpConfigName = 'frontend-ip-config'
+var probeName = 'http-probe'
+var backendPoolName = 'backend-pool'
+
+resource loadBalancer 'Microsoft.Network/loadBalancers@2021-03-01' = {
+  name: loadBalancerName
+  location: location
+  sku: {
+    name: 'Standard'
+  }
+  properties: {
+    frontendIPConfigurations: [
+      {
+        name: feIpConfigName
+        properties: {
+          publicIPAddress: {
+            id: loadBalancerIp.id
+          }
+        }
+      }
+    ]
+    backendAddressPools: [
+      {
+        name: backendPoolName
+      }
+    ]
+    loadBalancingRules: [
+      {
+        name: 'HTTP'
+        properties: {
+          protocol: 'Tcp'
+          frontendPort: 80
+          backendPort: 80
+          frontendIPConfiguration: {
+            id: resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations/', loadBalancerName, feIpConfigName)
+          }
+          backendAddressPool: {
+            id: resourceId('Microsoft.Network/loadBalancers/backendAddressPools/', loadBalancerName, backendPoolName)
+          }
+          probe: {
+            id: resourceId('Microsoft.Network/loadBalancers/probes/', loadBalancerName, probeName)
+          }
+        }
+      }
+    ]
+    probes: [
+      {
+        name: probeName
+        properties: {
+          port: 80
+          protocol: 'Http'
+          requestPath: '/'
+          intervalInSeconds: 5
+        }
+      }
+    ]
+  }
 }
 
 resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2021-11-01' = {
@@ -84,6 +189,9 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2021-11-01' = {
         }
       }
       networkProfile: {
+        healthProbe: {
+          id: loadBalancer.properties.probes[0].id
+        }
         networkInterfaceConfigurations: [
           {
             name: nicName
@@ -93,10 +201,17 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2021-11-01' = {
                 {
                   name: ipConfigName
                   properties: {
+                    primary: true
                     subnet: {
                       id: vnet.properties.subnets[0].id
                     }
-                    /* Enable a public IP address so you can RDP into an instance for debugging purposes.
+                    loadBalancerBackendAddressPools: [
+                      {
+                        id: loadBalancer.properties.backendAddressPools[0].id
+                      }
+                    ]
+                    // Enable a public IP address so you can RDP into an instance for debugging purposes.
+                    /*
                     publicIPAddressConfiguration: {
                       name: ipConfigName
                     }
@@ -109,11 +224,8 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2021-11-01' = {
         ]
       }
       priority: 'Spot'
-      securityProfile: {
-        encryptionAtHost: true
-      }
       osProfile: {
-        computerNamePrefix: 'insights'
+        computerNamePrefix: 'app'
         adminUsername: adminUsername
         adminPassword: adminPassword
       }
@@ -121,7 +233,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2021-11-01' = {
         extensionsTimeBudget: 'PT15M'
         extensions: [
           {
-            name: 'InstallWorkerStandalone'
+            name: 'InstallStandalone'
             properties: {
               publisher: 'Microsoft.Compute'
               type: 'CustomScriptExtension'
@@ -129,30 +241,12 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2021-11-01' = {
               autoUpgradeMinorVersion: true
               settings: {
                 fileUris: customScriptExtensionFiles
-                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -File "${deploymentLabel}/Install-WorkerStandalone.ps1" -DeploymentLabel "${deploymentLabel}" -HostPattern "AzureFunctionsHost.zip" -AppPattern "Worker.zip" -EnvPattern "WorkerStandalone.env" -LocalHealthPort 80 -UserManagedIdentityClientId "${userManagedIdentity.properties.clientId}" -ExpandOSPartition'
+                commandToExecute: 'powershell -ExecutionPolicy Unrestricted -File "${deploymentLabel}/Install-Standalone.ps1" -DeploymentLabel "${deploymentLabel}" -HostPattern "azure-functions-host-*.zip" -AppPattern "${appZipPattern}" -EnvPattern "*.env" -LocalHealthPort 80 -UserManagedIdentityClientId "${userManagedIdentity.properties.clientId}" -ExpandOSPartition'
               }
               protectedSettings: {
                 managedIdentity: {
                   clientId: userManagedIdentity.properties.clientId
                 }
-              }
-            }
-          }
-          {
-            name: 'WorkerHealthProbe'
-            properties: {
-              provisionAfterExtensions: [
-                'InstallWorkerStandalone'
-              ]
-              publisher: 'Microsoft.ManagedServices'
-              type: 'ApplicationHealthWindows'
-              typeHandlerVersion: '1.0'
-              autoUpgradeMinorVersion: true
-              enableAutomaticUpgrade: true
-              settings: {
-                protocol: 'http'
-                port: 80
-                requestPath: '/'
               }
             }
           }
