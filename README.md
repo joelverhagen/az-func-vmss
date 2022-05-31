@@ -36,7 +36,7 @@ The resources in Azure Portal will look something like this:
 
 ## Warranty
 
-There is no warrant at all. Do this at your own risk.
+There is no warranty at all. Do this at your own risk.
 
 YMMV.
 
