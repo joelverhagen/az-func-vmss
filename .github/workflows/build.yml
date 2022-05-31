@@ -10,8 +10,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os:
-          - windows-latest
+        os: [windows-latest]
+        include:
+          - os: windows-latest
+            rid: win-x64
 
     steps:
       - uses: actions/checkout@v2
@@ -19,8 +21,8 @@ jobs:
         with:
           dotnet-version: 6.0.x
       - shell: pwsh
-        run: ./build.ps1
+        run: ./build.ps1 -RuntimeIdentifier ${{ matrix.rid }}
       - uses: actions/upload-artifact@v2
         with:
-          name: ${{ matrix.os }}-artifacts
+          name: ${{ matrix.rid }}-artifacts
           path: artifacts/

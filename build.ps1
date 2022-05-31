@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param (
     [Parameter(Mandatory = $false)]
-    [string]$RuntimeIdentifier = "win-x64"
+    [string]$RuntimeIdentifier
 )
 
 Write-Host "Building the Azure Functions host..." -ForegroundColor Green
@@ -13,6 +13,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to publish the app."
 }
 
-Write-Host "Copying deployment scripts..." -ForegroundColor Green
+Write-Host "Copying deployment files..." -ForegroundColor Green
+Copy-Item (Join-Path $PSScriptRoot "app/example-config.env") (Join-Path $PSScriptRoot "artifacts/example-config.env") -Verbose
 Copy-Item (Join-Path $PSScriptRoot "scripts/Set-DeploymentFiles.ps1") (Join-Path $PSScriptRoot "artifacts/Set-DeploymentFiles.ps1") -Verbose
 Copy-Item (Join-Path $PSScriptRoot "scripts/Install-Standalone.ps1") (Join-Path $PSScriptRoot "artifacts/Install-Standalone.ps1") -Verbose

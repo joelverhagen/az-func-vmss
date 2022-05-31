@@ -85,4 +85,4 @@ if (Test-Path $hostBinZip) { Remove-Item $hostBinZip }
 Compress-Archive -Path (Join-Path $hostBinDir "*") -DestinationPath $hostBinZip
 
 # Delete the source directory since we don't need it anymore
-Remove-DirSafe $hostSrcDir
+Remove-DirSafe $artifactsDir
