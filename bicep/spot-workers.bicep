@@ -8,7 +8,7 @@ param storageAccountName string = 'azfuncvmss${uniqueString('funcvmss', resource
 param domainNamePrefix string = 'az-func-vmss-${uniqueString('funcvmss', resourceGroup().name)}-'
 
 @description('The release name to use for the deployment scripts and the Azure Functions Host zip file. Found on https://github.com/joelverhagen/az-func-vmss/releases')
-param gitHubReleaseName string = 'v0.0.2'
+param gitHubReleaseName string = 'v0.0.1'
 
 @description('A publicly accessibly URL (can be blob storage SAS) for the Azure Functions app zip file. Made with zipping the output of dotnet publish.')
 param appZipUrl string = 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/example-app-win-x64.zip'
