@@ -12,9 +12,7 @@ jobs:
         with:
           fetch-depth: 0
       - shell: pwsh
-        run: ./update-tag.ps1
-      - shell: pwsh
-        run: az bicep build --file bicep/spot-workers.bicep --outfile bicep/spot-workers.deploymentTemplate.json --verbose
+        run: ./post-release.ps1
       - name: Commit and push if data has changed
         run: |-
           git config user.name "Automated"
