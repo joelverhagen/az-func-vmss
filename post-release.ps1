@@ -19,7 +19,7 @@ $readme = $readme -replace "az-func-vmss%2Fv[\d\.]+\%2Fbicep%2F", "az-func-vmss%
 [IO.File]::WriteAllText($readmePath, $readme, $utf8)
 
 Write-Host "Compiling Bicep to ARM JSON..." -ForegroundColor Green
-az bicep build --file (Join-Path $PSScriptRoot "bicep/spot-workers.bicep") --outfile (Join-Path $PSScriptRoot "artifacts/spot-workers.deploymentTemplate.json") --verbose
+az bicep build --file (Join-Path $PSScriptRoot "bicep/spot-workers.bicep") --outfile (Join-Path $PSScriptRoot "bicep/spot-workers.deploymentTemplate.json") --verbose
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to compile the template."
 }
