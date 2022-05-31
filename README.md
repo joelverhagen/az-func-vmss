@@ -24,6 +24,16 @@ Publish your Functions app and zip the publish directory. Put your configuration
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjoelverhagen%2Faz-func-vmss%2Fv0.0.1%2Fbicep%2Fspot-workers.deploymentTemplate.json)
 
+After the deployment completes, go to the domain name associated with one of your load balancer resources, e.g.
+
+`http://az-func-vmss-ub6loiqgi5bga-0.southcentralus.cloudapp.azure.com/api/hello`
+
+![HTTP trigger output](img/http-trigger.png)
+
+The resources in Azure Portal will look something like this:
+
+![Azure Portal resources](img/resources.png)
+
 ## Warranty
 
 There is no warrant at all. Do this at your own risk.
