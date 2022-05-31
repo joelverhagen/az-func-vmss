@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.6.18.56646",
-      "templateHash": "8911560044301442248"
+      "templateHash": "11218417651773533472"
     }
   },
   "parameters": {
@@ -32,7 +32,7 @@
     },
     "gitHubReleaseName": {
       "type": "string",
-      "defaultValue": "v0.0.2",
+      "defaultValue": "v0.0.1",
       "metadata": {
         "description": "The release name to use for the deployment scripts and the Azure Functions Host zip file. Found on https://github.com/joelverhagen/az-func-vmss/releases"
       }
