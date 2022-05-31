@@ -19,7 +19,7 @@ param appEnvUrl string
 param userManagedIdentityName string = 'az-func-vmss'
 
 @description('The file name pattern used to find the appZipUrl file after downloading it. Defaults to the file name in URL.')
-param appZipPattern string = split(split(appZipUrl, '?')[0], '/')[-1]
+param appZipPattern string = last(split(split(appZipUrl, '?')[0], '/'))
 
 @description('The deployment label to use as a directory name in the deployment blob storage container and on the VMSS disk.')
 param deploymentLabel string = newGuid()
