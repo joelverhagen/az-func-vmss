@@ -17,3 +17,9 @@ Write-Host "Copying deployment files..." -ForegroundColor Green
 Copy-Item (Join-Path $PSScriptRoot "app/example-config.env") (Join-Path $PSScriptRoot "artifacts/example-config.env") -Verbose
 Copy-Item (Join-Path $PSScriptRoot "scripts/Set-DeploymentFiles.ps1") (Join-Path $PSScriptRoot "artifacts/Set-DeploymentFiles.ps1") -Verbose
 Copy-Item (Join-Path $PSScriptRoot "scripts/Install-Standalone.ps1") (Join-Path $PSScriptRoot "artifacts/Install-Standalone.ps1") -Verbose
+
+Write-Host "Compiling Bicep to ARM JSON..." -ForegroundColor Green
+az bicep build --file (Join-Path $PSScriptRoot "bicep/spot-workers.bicep") --outfile (Join-Path $PSScriptRoot "artifacts/spot-workers.deploymentTemplate.json") --verbose
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to compile the template."
+}
