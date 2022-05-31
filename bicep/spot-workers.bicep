@@ -2,18 +2,23 @@
 param location string = resourceGroup().location
 
 @description('The storage account to upload deployment files to and use for the Azure Functions host.')
-param storageAccountName string
+param storageAccountName string = 'azfuncvmss${uniqueString('funcvmss', resourceGroup().name)}'
+
+@description('The storage account to upload deployment files to and use for the Azure Functions host.')
+param domainNamePrefix string = 'az-func-vmss-${uniqueString('funcvmss', resourceGroup().name)}-'
 
 @description('The release name to use for the deployment scripts and the Azure Functions Host zip file. Found on https://github.com/joelverhagen/az-func-vmss/releases')
-param gitHubReleaseName string
+param gitHubReleaseName string = 'v0.0.2'
 
 @description('A publicly accessibly URL (can be blob storage SAS) for the Azure Functions app zip file. Made with zipping the output of dotnet publish.')
 @secure()
-param appZipUrl string
+#disable-next-line secure-parameter-default
+param appZipUrl string = 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/example-app-win-x64.zip'
 
 @description('A publicly accessibly URL (can be blob storage SAS) for the app settings. Works like Docker environment files (.env).')
 @secure()
-param appEnvUrl string
+#disable-next-line secure-parameter-default
+param appEnvUrl string = 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/example-config.env'
 
 @description('The name of the user managed identity to assign to the VMSS.')
 param userManagedIdentityName string = 'az-func-vmss'
@@ -32,7 +37,7 @@ param adminUsername string = 'az-func-vmss'
 
 @description('The admin password for the VMSS instances.')
 @secure()
-param adminPassword string
+param adminPassword string = 'AFV1!${uniqueString(newGuid())}${uniqueString(deployment().name)}${uniqueString(resourceGroup().name)}'
 
 @description('The specs for the VMSS resources. An array of objects. Each object must have: namePrefix (string, prefix for VMSS resource names), location (string, location for the VMSS resources), sku (string, VMSS SKU), maxInstances (int, max instances for auto-scaling).')
 param specs array = [
@@ -59,7 +64,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2019-06-01' = {
 }
 
 resource blobPermissions 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = {
-  name: guid('AppCanAccessBlob-${userManagedIdentity.id}')
+  name: guid('AppCanAccessBlob-${userManagedIdentity.id}-${storageAccount.id}')
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
@@ -69,7 +74,7 @@ resource blobPermissions 'Microsoft.Authorization/roleAssignments@2020-10-01-pre
 }
 
 resource queuePermissions 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = {
-  name: guid('AppCanAccessQueue-${userManagedIdentity.id}')
+  name: guid('AppCanAccessQueue-${userManagedIdentity.id}-${storageAccount.id}')
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
@@ -79,7 +84,7 @@ resource queuePermissions 'Microsoft.Authorization/roleAssignments@2020-10-01-pr
 }
 
 resource tablePermissions 'Microsoft.Authorization/roleAssignments@2020-10-01-preview' = {
-  name: guid('AppCanAccessTable-${userManagedIdentity.id}')
+  name: guid('AppCanAccessTable-${userManagedIdentity.id}-${storageAccount.id}')
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
@@ -137,6 +142,7 @@ module workers './spot-worker.bicep' = [for (spec, index) in specs: {
     appZipPattern: appZipPattern
     location: spec.location
     vmssSku: spec.sku
+    domainNameLabel: '${domainNamePrefix}${index}'
     nsgName: '${spec.namePrefix}nsg'
     vnetName: '${spec.namePrefix}vnet'
     vmssName: '${spec.namePrefix}vmss'
@@ -149,3 +155,5 @@ module workers './spot-worker.bicep' = [for (spec, index) in specs: {
     adminPassword: adminPassword
   }
 }]
+
+output fqdns array = [for (spec, index) in specs: workers[index].outputs.fqdn]

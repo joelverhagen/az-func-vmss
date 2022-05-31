@@ -11,6 +11,7 @@ param maxInstances int
 param nsgName string
 param vnetName string
 param vmssName string
+param domainNameLabel string
 param nicName string
 param ipConfigName string
 param autoscaleName string
@@ -93,10 +94,12 @@ resource loadBalancerIp 'Microsoft.Network/publicIPAddresses@2021-03-01' = {
   properties: {
     publicIPAllocationMethod: 'Static'
     dnsSettings: {
-      domainNameLabel: vmssName
+      domainNameLabel: domainNameLabel
     }
   }
 }
+
+output fqdn string = loadBalancerIp.properties.dnsSettings.fqdn
 
 var feIpConfigName = 'frontend-ip-config'
 var probeName = 'http-probe'
