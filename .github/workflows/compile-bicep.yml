@@ -10,7 +10,9 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - shell: pwsh
-        run: az bicep build --file bicep/spot-workers.bicep --outfile artifacts/spot-workers.deploymentTemplate.json --verbose
+        run: |-
+          New-Item artifacts -ItemType Directory -Force
+          az bicep build --file bicep/spot-workers.bicep --outfile artifacts/spot-workers.deploymentTemplate.json --verbose
       - name: Commit and push if data has changed
         run: |-
           git config user.name "Automated"
