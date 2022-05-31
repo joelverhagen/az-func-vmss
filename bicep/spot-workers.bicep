@@ -4,23 +4,19 @@ param location string = resourceGroup().location
 @description('The storage account to upload deployment files to and use for the Azure Functions host.')
 param storageAccountName string = 'azfuncvmss${uniqueString('funcvmss', resourceGroup().name)}'
 
-@description('The storage account to upload deployment files to and use for the Azure Functions host.')
+@description('The prefix to use for the VMSS load balancer domain name labels. The FQDN will look something like \'{domainNamePrefix}-{index}.{region}.cloudapp.azure.com\'.')
 param domainNamePrefix string = 'az-func-vmss-${uniqueString('funcvmss', resourceGroup().name)}-'
 
 @description('The release name to use for the deployment scripts and the Azure Functions Host zip file. Found on https://github.com/joelverhagen/az-func-vmss/releases')
 param gitHubReleaseName string = 'v0.0.2'
 
 @description('A publicly accessibly URL (can be blob storage SAS) for the Azure Functions app zip file. Made with zipping the output of dotnet publish.')
-@secure()
-#disable-next-line secure-parameter-default
 param appZipUrl string = 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/example-app-win-x64.zip'
 
 @description('A publicly accessibly URL (can be blob storage SAS) for the app settings. Works like Docker environment files (.env).')
-@secure()
-#disable-next-line secure-parameter-default
 param appEnvUrl string = 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/example-config.env'
 
-@description('The name of the user managed identity to assign to the VMSS.')
+@description('The name of the user managed identity to assign to the VMSS and use for deployment file uploads.')
 param userManagedIdentityName string = 'az-func-vmss'
 
 @description('The file name pattern used to find the appZipUrl file after downloading it. Defaults to the file name in URL.')
@@ -33,7 +29,7 @@ param deploymentLabel string = newGuid()
 param deploymentContainerName string = 'deployment'
 
 @description('The admin username for the VMSS instances.')
-param adminUsername string = 'az-func-vmss'
+param adminUsername string = 'azfuncvmss'
 
 @description('The admin password for the VMSS instances.')
 @secure()
@@ -42,10 +38,10 @@ param adminPassword string = 'AFV1!${uniqueString(newGuid())}${uniqueString(depl
 @description('The specs for the VMSS resources. An array of objects. Each object must have: namePrefix (string, prefix for VMSS resource names), location (string, location for the VMSS resources), sku (string, VMSS SKU), maxInstances (int, max instances for auto-scaling).')
 param specs array = [
   {
-    namePrefix: 'az-func-vmss-0-'
-    location: location
     sku: 'Standard_D2as_v4'
     maxInstances: 30
+    namePrefix: 'az-func-vmss-0-'
+    location: location
   }
 ]
 
