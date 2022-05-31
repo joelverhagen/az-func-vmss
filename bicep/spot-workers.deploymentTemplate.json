@@ -1,0 +1,989 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.6.18.56646",
+      "templateHash": "11281304997045773251"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "The region to provision resources in. Defaults to the resource group location."
+      }
+    },
+    "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[format('azfuncvmss{0}', uniqueString('funcvmss', resourceGroup().name))]",
+      "metadata": {
+        "description": "The storage account to upload deployment files to and use for the Azure Functions host."
+      }
+    },
+    "domainNamePrefix": {
+      "type": "string",
+      "defaultValue": "[format('az-func-vmss-{0}-', uniqueString('funcvmss', resourceGroup().name))]",
+      "metadata": {
+        "description": "The storage account to upload deployment files to and use for the Azure Functions host."
+      }
+    },
+    "gitHubReleaseName": {
+      "type": "string",
+      "defaultValue": "v0.0.2",
+      "metadata": {
+        "description": "The release name to use for the deployment scripts and the Azure Functions Host zip file. Found on https://github.com/joelverhagen/az-func-vmss/releases"
+      }
+    },
+    "appZipUrl": {
+      "type": "secureString",
+      "defaultValue": "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/example-app-win-x64.zip', parameters('gitHubReleaseName'))]",
+      "metadata": {
+        "description": "A publicly accessibly URL (can be blob storage SAS) for the Azure Functions app zip file. Made with zipping the output of dotnet publish."
+      }
+    },
+    "appEnvUrl": {
+      "type": "secureString",
+      "defaultValue": "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/example-config.env', parameters('gitHubReleaseName'))]",
+      "metadata": {
+        "description": "A publicly accessibly URL (can be blob storage SAS) for the app settings. Works like Docker environment files (.env)."
+      }
+    },
+    "userManagedIdentityName": {
+      "type": "string",
+      "defaultValue": "az-func-vmss",
+      "metadata": {
+        "description": "The name of the user managed identity to assign to the VMSS."
+      }
+    },
+    "appZipPattern": {
+      "type": "string",
+      "defaultValue": "[last(split(split(parameters('appZipUrl'), '?')[0], '/'))]",
+      "metadata": {
+        "description": "The file name pattern used to find the appZipUrl file after downloading it. Defaults to the file name in URL."
+      }
+    },
+    "deploymentLabel": {
+      "type": "string",
+      "defaultValue": "[newGuid()]",
+      "metadata": {
+        "description": "The deployment label to use as a directory name in the deployment blob storage container and on the VMSS disk."
+      }
+    },
+    "deploymentContainerName": {
+      "type": "string",
+      "defaultValue": "deployment",
+      "metadata": {
+        "description": "The container name to use for holding deployment files (host, app, env, install script) for VMSS custom script extension files."
+      }
+    },
+    "adminUsername": {
+      "type": "string",
+      "defaultValue": "az-func-vmss",
+      "metadata": {
+        "description": "The admin username for the VMSS instances."
+      }
+    },
+    "adminPassword": {
+      "type": "secureString",
+      "defaultValue": "[format('AFV1!{0}{1}{2}', uniqueString(newGuid()), uniqueString(deployment().name), uniqueString(resourceGroup().name))]",
+      "metadata": {
+        "description": "The admin password for the VMSS instances."
+      }
+    },
+    "specs": {
+      "type": "array",
+      "defaultValue": [
+        {
+          "namePrefix": "az-func-vmss-0-",
+          "location": "[parameters('location')]",
+          "sku": "Standard_D2as_v4",
+          "maxInstances": 30
+        }
+      ],
+      "metadata": {
+        "description": "The specs for the VMSS resources. An array of objects. Each object must have: namePrefix (string, prefix for VMSS resource names), location (string, location for the VMSS resources), sku (string, VMSS SKU), maxInstances (int, max instances for auto-scaling)."
+      }
+    }
+  },
+  "variables": {
+    "deploymentLongName": "[format('{0}-worker-', deployment().name)]",
+    "deploymentName": "[if(greater(length(variables('deploymentLongName')), sub(64, 10)), format('{0}-spot-worker-', guid(deployment().name)), variables('deploymentLongName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2018-11-30",
+      "name": "[parameters('userManagedIdentityName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2019-06-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2020-10-01-preview",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+      "name": "[guid(format('AppCanAccessBlob-{0}-{1}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')), resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))).principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2020-10-01-preview",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+      "name": "[guid(format('AppCanAccessQueue-{0}-{1}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')), resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))).principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2020-10-01-preview",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', parameters('storageAccountName'))]",
+      "name": "[guid(format('AppCanAccessTable-{0}-{1}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')), resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))).principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2019-06-01",
+      "name": "[format('{0}/default/{1}', parameters('storageAccountName'), parameters('deploymentContainerName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2020-10-01",
+      "name": "[format('{0}-upload', parameters('storageAccountName'))]",
+      "location": "[parameters('location')]",
+      "kind": "AzurePowerShell",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')))]": {}
+        }
+      },
+      "properties": {
+        "azPowerShellVersion": "7.5",
+        "arguments": "[format('-ManagedIdentityClientId ''{0}'' -DeploymentLabel ''{1}'' -StorageAccountName ''{2}'' -DeploymentContainerName ''{3}''', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))).clientId, parameters('deploymentLabel'), parameters('storageAccountName'), parameters('deploymentContainerName'))]",
+        "primaryScriptUri": "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/Set-DeploymentFiles.ps1', parameters('gitHubReleaseName'))]",
+        "supportingScriptUris": [
+          "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/azure-functions-host-4.3.0-win-x64.zip', parameters('gitHubReleaseName'))]",
+          "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/Install-Standalone.ps1', parameters('gitHubReleaseName'))]",
+          "[parameters('appZipUrl')]",
+          "[parameters('appEnvUrl')]"
+        ],
+        "cleanupPreference": "Always",
+        "retentionInterval": "PT1H"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/blobServices/containers', split(format('{0}/default/{1}', parameters('storageAccountName'), parameters('deploymentContainerName')), '/')[0], split(format('{0}/default/{1}', parameters('storageAccountName'), parameters('deploymentContainerName')), '/')[1], split(format('{0}/default/{1}', parameters('storageAccountName'), parameters('deploymentContainerName')), '/')[2])]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))]"
+      ]
+    },
+    {
+      "copy": {
+        "name": "workers",
+        "count": "[length(parameters('specs'))]"
+      },
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "[format('{0}{1}', variables('deploymentName'), copyIndex())]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "userManagedIdentityName": {
+            "value": "[parameters('userManagedIdentityName')]"
+          },
+          "deploymentLabel": {
+            "value": "[parameters('deploymentLabel')]"
+          },
+          "customScriptExtensionFiles": {
+            "value": "[reference(resourceId('Microsoft.Resources/deploymentScripts', format('{0}-upload', parameters('storageAccountName')))).outputs.customScriptExtensionFiles]"
+          },
+          "appZipPattern": {
+            "value": "[parameters('appZipPattern')]"
+          },
+          "location": {
+            "value": "[parameters('specs')[copyIndex()].location]"
+          },
+          "vmssSku": {
+            "value": "[parameters('specs')[copyIndex()].sku]"
+          },
+          "domainNameLabel": {
+            "value": "[format('{0}{1}', parameters('domainNamePrefix'), copyIndex())]"
+          },
+          "nsgName": {
+            "value": "[format('{0}nsg', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "vnetName": {
+            "value": "[format('{0}vnet', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "vmssName": {
+            "value": "[format('{0}vmss', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "maxInstances": {
+            "value": "[parameters('specs')[copyIndex()].maxInstances]"
+          },
+          "nicName": {
+            "value": "[format('{0}nic', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "ipConfigName": {
+            "value": "[format('{0}ip', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "autoscaleName": {
+            "value": "[format('{0}autoscale', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "loadBalancerName": {
+            "value": "[format('{0}lb', parameters('specs')[copyIndex()].namePrefix)]"
+          },
+          "adminUsername": {
+            "value": "[parameters('adminUsername')]"
+          },
+          "adminPassword": {
+            "value": "[parameters('adminPassword')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.6.18.56646",
+              "templateHash": "11714915117323337537"
+            }
+          },
+          "parameters": {
+            "userManagedIdentityName": {
+              "type": "string"
+            },
+            "deploymentLabel": {
+              "type": "string"
+            },
+            "customScriptExtensionFiles": {
+              "type": "array"
+            },
+            "appZipPattern": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            },
+            "vmssSku": {
+              "type": "string"
+            },
+            "maxInstances": {
+              "type": "int",
+              "minValue": 1
+            },
+            "nsgName": {
+              "type": "string"
+            },
+            "vnetName": {
+              "type": "string"
+            },
+            "vmssName": {
+              "type": "string"
+            },
+            "domainNameLabel": {
+              "type": "string"
+            },
+            "nicName": {
+              "type": "string"
+            },
+            "ipConfigName": {
+              "type": "string"
+            },
+            "autoscaleName": {
+              "type": "string"
+            },
+            "loadBalancerName": {
+              "type": "string"
+            },
+            "adminUsername": {
+              "type": "string"
+            },
+            "adminPassword": {
+              "type": "secureString"
+            }
+          },
+          "variables": {
+            "feIpConfigName": "frontend-ip-config",
+            "probeName": "http-probe",
+            "backendPoolName": "backend-pool",
+            "skuInfo": {
+              "Standard_D2a_v4": {
+                "diskSizeGB": 50,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D2ads_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D2as_v4": {
+                "diskSizeGB": 50,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_D2d_v4": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D2d_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D2ds_v4": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D2ds_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D2s_v3": {
+                "diskSizeGB": 50,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_D4a_v4": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D4ads_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D4as_v4": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_D4d_v4": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D4d_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D4ds_v4": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D4ds_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D4s_v3": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_D8a_v4": {
+                "diskSizeGB": 200,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D8ads_v5": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D8as_v4": {
+                "diskSizeGB": 200,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_D8d_v4": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D8d_v5": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D8ds_v4": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D8ds_v5": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_D8s_v3": {
+                "diskSizeGB": 200,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DC2ads_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC2ds_v3": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC2s_v2": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC4ads_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC4ds_v3": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC4s_v2": {
+                "diskSizeGB": 200,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC8_v2": {
+                "diskSizeGB": 400,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DC8ads_v5": {
+                "diskSizeGB": 300,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_DS11_v2": {
+                "diskSizeGB": 72,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS11-1_v2": {
+                "diskSizeGB": 72,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS11": {
+                "diskSizeGB": 72,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS12_v2": {
+                "diskSizeGB": 144,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS12-1_v2": {
+                "diskSizeGB": 144,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS12-2_v2": {
+                "diskSizeGB": 144,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS12": {
+                "diskSizeGB": 144,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS2_v2": {
+                "diskSizeGB": 86,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS2": {
+                "diskSizeGB": 86,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS3_v2": {
+                "diskSizeGB": 172,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS3": {
+                "diskSizeGB": 172,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS4_v2": {
+                "diskSizeGB": 344,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_DS4": {
+                "diskSizeGB": 344,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_E2a_v4": {
+                "diskSizeGB": 50,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E2ads_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E2as_v4": {
+                "diskSizeGB": 50,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_E2bds_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E2d_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E2ds_v4": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E2ds_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E2s_v3": {
+                "diskSizeGB": 50,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_E4-2ads_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4-2as_v4": {
+                "diskSizeGB": 99,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_E4-2ds_v4": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4-2ds_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4-2s_v3": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_E4a_v4": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4ads_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4as_v4": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_E4bds_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4d_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4ds_v4": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4ds_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_E4s_v3": {
+                "diskSizeGB": 100,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_EC2ads_v5": {
+                "diskSizeGB": 75,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_EC4ads_v5": {
+                "diskSizeGB": 150,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_F16s_v2": {
+                "diskSizeGB": 256,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_F16s": {
+                "diskSizeGB": 192,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_F2s_v2": {
+                "diskSizeGB": 32,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_F4s_v2": {
+                "diskSizeGB": 64,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_F4s": {
+                "diskSizeGB": 48,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_F8s_v2": {
+                "diskSizeGB": 128,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_F8s": {
+                "diskSizeGB": 96,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_GS1": {
+                "diskSizeGB": 264,
+                "diffDiskPlacement": "CacheDisk"
+              },
+              "Standard_L4s": {
+                "diskSizeGB": 678,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_NC4as_T4_v3": {
+                "diskSizeGB": 176,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_NV4as_v4": {
+                "diskSizeGB": 88,
+                "diffDiskPlacement": "ResourceDisk"
+              },
+              "Standard_NV8as_v4": {
+                "diskSizeGB": 176,
+                "diffDiskPlacement": "ResourceDisk"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2021-03-01",
+              "name": "[parameters('nsgName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "HTTP",
+                    "properties": {
+                      "priority": 100,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "80"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2021-03-01",
+              "name": "[parameters('vnetName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "172.27.0.0/16"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "default",
+                    "properties": {
+                      "addressPrefix": "172.27.0.0/16",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgName'))]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('nsgName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2021-03-01",
+              "name": "[format('{0}-ip', parameters('loadBalancerName'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                  "domainNameLabel": "[parameters('domainNameLabel')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/loadBalancers",
+              "apiVersion": "2021-03-01",
+              "name": "[parameters('loadBalancerName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard"
+              },
+              "properties": {
+                "frontendIPConfigurations": [
+                  {
+                    "name": "[variables('feIpConfigName')]",
+                    "properties": {
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('loadBalancerName')))]"
+                      }
+                    }
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "[variables('backendPoolName')]"
+                  }
+                ],
+                "loadBalancingRules": [
+                  {
+                    "name": "HTTP",
+                    "properties": {
+                      "protocol": "Tcp",
+                      "frontendPort": 80,
+                      "backendPort": 80,
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/frontendIPConfigurations/', parameters('loadBalancerName'), variables('feIpConfigName'))]"
+                      },
+                      "backendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/backendAddressPools/', parameters('loadBalancerName'), variables('backendPoolName'))]"
+                      },
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/loadBalancers/probes/', parameters('loadBalancerName'), variables('probeName'))]"
+                      }
+                    }
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "[variables('probeName')]",
+                    "properties": {
+                      "port": 80,
+                      "protocol": "Http",
+                      "requestPath": "/",
+                      "intervalInSeconds": 5
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('loadBalancerName')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Compute/virtualMachineScaleSets",
+              "apiVersion": "2021-11-01",
+              "name": "[parameters('vmssName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "[parameters('vmssSku')]"
+              },
+              "identity": {
+                "type": "UserAssigned",
+                "userAssignedIdentities": {
+                  "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')))]": {}
+                }
+              },
+              "properties": {
+                "overprovision": false,
+                "virtualMachineProfile": {
+                  "storageProfile": {
+                    "osDisk": {
+                      "createOption": "FromImage",
+                      "diskSizeGB": "[variables('skuInfo')[parameters('vmssSku')].diskSizeGB]",
+                      "diffDiskSettings": {
+                        "option": "Local",
+                        "placement": "[variables('skuInfo')[parameters('vmssSku')].diffDiskPlacement]"
+                      }
+                    },
+                    "imageReference": {
+                      "publisher": "MicrosoftWindowsServer",
+                      "offer": "WindowsServer",
+                      "sku": "2022-datacenter-core-smalldisk",
+                      "version": "latest"
+                    }
+                  },
+                  "networkProfile": {
+                    "healthProbe": {
+                      "id": "[reference(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancerName'))).probes[0].id]"
+                    },
+                    "networkInterfaceConfigurations": [
+                      {
+                        "name": "[parameters('nicName')]",
+                        "properties": {
+                          "primary": true,
+                          "ipConfigurations": [
+                            {
+                              "name": "[parameters('ipConfigName')]",
+                              "properties": {
+                                "primary": true,
+                                "subnet": {
+                                  "id": "[reference(resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))).subnets[0].id]"
+                                },
+                                "loadBalancerBackendAddressPools": [
+                                  {
+                                    "id": "[reference(resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancerName'))).backendAddressPools[0].id]"
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "priority": "Spot",
+                  "osProfile": {
+                    "computerNamePrefix": "app",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]"
+                  },
+                  "extensionProfile": {
+                    "extensionsTimeBudget": "PT15M",
+                    "extensions": [
+                      {
+                        "name": "InstallStandalone",
+                        "properties": {
+                          "publisher": "Microsoft.Compute",
+                          "type": "CustomScriptExtension",
+                          "typeHandlerVersion": "1.10",
+                          "autoUpgradeMinorVersion": true,
+                          "settings": {
+                            "fileUris": "[parameters('customScriptExtensionFiles')]",
+                            "commandToExecute": "[format('powershell -ExecutionPolicy Unrestricted -File \"{0}/Install-Standalone.ps1\" -DeploymentLabel \"{1}\" -HostPattern \"azure-functions-host-*.zip\" -AppPattern \"{2}\" -EnvPattern \"*.env\" -LocalHealthPort 80 -UserManagedIdentityClientId \"{3}\" -ExpandOSPartition', parameters('deploymentLabel'), parameters('deploymentLabel'), parameters('appZipPattern'), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')), '2018-11-30').clientId)]"
+                          },
+                          "protectedSettings": {
+                            "managedIdentity": {
+                              "clientId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName')), '2018-11-30').clientId]"
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                "automaticRepairsPolicy": {
+                  "enabled": true,
+                  "gracePeriod": "PT15M"
+                },
+                "upgradePolicy": {
+                  "mode": "Automatic"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/loadBalancers', parameters('loadBalancerName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Insights/autoscalesettings",
+              "apiVersion": "2015-04-01",
+              "name": "[parameters('autoscaleName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "enabled": true,
+                "targetResourceLocation": "[parameters('location')]",
+                "targetResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+                "profiles": [
+                  {
+                    "name": "default",
+                    "capacity": {
+                      "default": "1",
+                      "minimum": "1",
+                      "maximum": "[string(parameters('maxInstances'))]"
+                    },
+                    "rules": [
+                      {
+                        "metricTrigger": {
+                          "metricName": "Percentage CPU",
+                          "metricNamespace": "microsoft.compute/virtualmachinescalesets",
+                          "metricResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+                          "timeGrain": "PT1M",
+                          "statistic": "Average",
+                          "timeWindow": "PT10M",
+                          "timeAggregation": "Average",
+                          "operator": "GreaterThan",
+                          "threshold": 25
+                        },
+                        "scaleAction": {
+                          "direction": "Increase",
+                          "type": "ChangeCount",
+                          "cooldown": "PT1M",
+                          "value": "5"
+                        }
+                      },
+                      {
+                        "metricTrigger": {
+                          "metricName": "Percentage CPU",
+                          "metricNamespace": "microsoft.compute/virtualmachinescalesets",
+                          "metricResourceUri": "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]",
+                          "timeGrain": "PT1M",
+                          "statistic": "Average",
+                          "timeWindow": "PT10M",
+                          "timeAggregation": "Average",
+                          "operator": "LessThanOrEqual",
+                          "threshold": 15
+                        },
+                        "scaleAction": {
+                          "direction": "Decrease",
+                          "type": "ChangeCount",
+                          "cooldown": "PT2M",
+                          "value": "10"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachineScaleSets', parameters('vmssName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "fqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-ip', parameters('loadBalancerName')))).dnsSettings.fqdn]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deploymentScripts', format('{0}-upload', parameters('storageAccountName')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "fqdns": {
+      "type": "array",
+      "copy": {
+        "count": "[length(parameters('specs'))]",
+        "input": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}{1}', variables('deploymentName'), copyIndex()))).outputs.fqdn.value]"
+      }
+    }
+  }
+}
