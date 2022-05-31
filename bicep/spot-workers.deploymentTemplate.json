@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.6.18.56646",
-      "templateHash": "11281304997045773251"
+      "templateHash": "8911560044301442248"
     }
   },
   "parameters": {
@@ -27,7 +27,7 @@
       "type": "string",
       "defaultValue": "[format('az-func-vmss-{0}-', uniqueString('funcvmss', resourceGroup().name))]",
       "metadata": {
-        "description": "The storage account to upload deployment files to and use for the Azure Functions host."
+        "description": "The prefix to use for the VMSS load balancer domain name labels. The FQDN will look something like '{domainNamePrefix}-{index}.{region}.cloudapp.azure.com'."
       }
     },
     "gitHubReleaseName": {
@@ -38,14 +38,14 @@
       }
     },
     "appZipUrl": {
-      "type": "secureString",
+      "type": "string",
       "defaultValue": "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/example-app-win-x64.zip', parameters('gitHubReleaseName'))]",
       "metadata": {
         "description": "A publicly accessibly URL (can be blob storage SAS) for the Azure Functions app zip file. Made with zipping the output of dotnet publish."
       }
     },
     "appEnvUrl": {
-      "type": "secureString",
+      "type": "string",
       "defaultValue": "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/example-config.env', parameters('gitHubReleaseName'))]",
       "metadata": {
         "description": "A publicly accessibly URL (can be blob storage SAS) for the app settings. Works like Docker environment files (.env)."
@@ -55,7 +55,7 @@
       "type": "string",
       "defaultValue": "az-func-vmss",
       "metadata": {
-        "description": "The name of the user managed identity to assign to the VMSS."
+        "description": "The name of the user managed identity to assign to the VMSS and use for deployment file uploads."
       }
     },
     "appZipPattern": {
@@ -81,7 +81,7 @@
     },
     "adminUsername": {
       "type": "string",
-      "defaultValue": "az-func-vmss",
+      "defaultValue": "azfuncvmss",
       "metadata": {
         "description": "The admin username for the VMSS instances."
       }
@@ -97,10 +97,10 @@
       "type": "array",
       "defaultValue": [
         {
-          "namePrefix": "az-func-vmss-0-",
-          "location": "[parameters('location')]",
           "sku": "Standard_D2as_v4",
-          "maxInstances": 30
+          "maxInstances": 30,
+          "namePrefix": "az-func-vmss-0-",
+          "location": "[parameters('location')]"
         }
       ],
       "metadata": {
