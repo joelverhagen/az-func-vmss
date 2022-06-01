@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.6.18.56646",
-      "templateHash": "11218417651773533472"
+      "templateHash": "11481634820416340775"
     }
   },
   "parameters": {
@@ -199,6 +199,7 @@
         "arguments": "[format('-ManagedIdentityClientId ''{0}'' -DeploymentLabel ''{1}'' -StorageAccountName ''{2}'' -DeploymentContainerName ''{3}''', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('userManagedIdentityName'))).clientId, parameters('deploymentLabel'), parameters('storageAccountName'), parameters('deploymentContainerName'))]",
         "primaryScriptUri": "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/Set-DeploymentFiles.ps1', parameters('gitHubReleaseName'))]",
         "supportingScriptUris": [
+          "https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1",
           "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/azure-functions-host-4.3.0-win-x64.zip', parameters('gitHubReleaseName'))]",
           "[format('https://github.com/joelverhagen/az-func-vmss/releases/download/{0}/Install-Standalone.ps1', parameters('gitHubReleaseName'))]",
           "[parameters('appZipUrl')]",
