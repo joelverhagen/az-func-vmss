@@ -111,6 +111,7 @@ resource uploadBlobs 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
     arguments: '-ManagedIdentityClientId \'${userManagedIdentity.properties.clientId}\' -DeploymentLabel \'${deploymentLabel}\' -StorageAccountName \'${storageAccountName}\' -DeploymentContainerName \'${deploymentContainerName}\''
     primaryScriptUri: 'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/Set-DeploymentFiles.ps1'
     supportingScriptUris: [
+      'https://dotnet.microsoft.com/download/dotnet/scripts/v1/dotnet-install.ps1'
       'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/azure-functions-host-4.3.0-win-x64.zip'
       'https://github.com/joelverhagen/az-func-vmss/releases/download/${gitHubReleaseName}/Install-Standalone.ps1'
       appZipUrl
@@ -153,4 +154,3 @@ module workers './spot-worker.bicep' = [for (spec, index) in specs: {
 }]
 
 output fqdns array = [for (spec, index) in specs: workers[index].outputs.fqdn]
-
