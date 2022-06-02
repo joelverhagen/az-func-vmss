@@ -22,7 +22,7 @@ Some stuff baked into this example:
 
 Publish your Functions app and zip the publish directory. Put your configuration in a [environment file (.env)](https://docs.docker.com/compose/env-file/). Deploy it to a spot VM scale set.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjoelverhagen%2Faz-func-vmss%2Fv0.0.1%2Fbicep%2Fspot-workers.deploymentTemplate.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjoelverhagen%2Faz-func-vmss%2Fv0.0.2%2Fbicep%2Fspot-workers.deploymentTemplate.json)
 
 After the deployment completes, go to the domain name associated with one of your load balancer resources, e.g.
 
