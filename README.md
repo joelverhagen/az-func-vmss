@@ -1,5 +1,9 @@
 # az-func-vmss
 
+**This repository is for my blog post [Run Azure Functions on Virtual Machine Scale Sets](https://www.joelverhagen.com/blog/2022/05/azure-functions-on-vmss). Read it for more context and background.**
+
+## Introduction
+
 This repository contains an example of how you can run Azure Functions on Azure VM scale-sets (VMSS).
 
 This example uses a [spot VM](https://azure.microsoft.com/en-us/services/virtual-machines/spot/) based VM scale set. If you pick your region and SKU well, you can run your workloads on the cheap. Save 💰.
